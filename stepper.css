@@ -1,0 +1,566 @@
+/* =============================================================================
+   collapsible-stepper.css
+   -----------------------------------------------------------------------------
+   Universal collapsible stepper pattern (CSS + Vanilla JS).
+   Supports 1–6 steps. Step 1 is a fixed visual anchor and does not move
+   between the compact and the expanded state. Steps 2..N collapse behind
+   Step 1, then unfold vertically below it.
+   =============================================================================
+
+   ARCHITECTURE OVERVIEW
+   ---------------------
+   The component renders one container with two visual modes:
+
+     compact  → horizontal row of indicator circles with short labels below.
+                When labels would horizontally collide, the controller turns
+                on "zickzack" layout: even-numbered step labels (2, 4, 6)
+                drop into a second row.
+
+     expanded → vertical stack: Step 1 in its original position, Steps 2..N
+                fall in beneath. A "detail" block (long label + secondary text)
+                appears to the right of each indicator.
+
+   CSS POSITIONING STRATEGY
+   ------------------------
+   Indicators (.cstepper__step-icon) and details (.cstepper__detail) are
+   absolutely positioned inside .cstepper__content. The container provides
+   the coordinate system; we never use flexbox/grid for the indicator row,
+   because we need to smoothly transition individual positions between states.
+
+   Step 1 always sits at (--cstepper-anchor-x, --cstepper-anchor-y) and never
+   moves. Steps 2..N have three position presets, switched via classes:
+
+     default (compact): horizontally spaced via --cstepper-h-spacing.
+     .is-stacking:      all collapsed onto Step 1's anchor point.
+     .is-vertical:      anchor-x, top = --cstepper-step-N-y.
+
+   DYNAMIC LAYOUT (JavaScript-driven)
+   ----------------------------------
+   The JS controller runs ONE unified layout function (`_measureAndLayout`)
+   that observes the container width and writes back inline custom properties:
+
+     --cstepper-circle-size       — indicator radius (compact + expanded)
+     --cstepper-circle-font-size  — number inside each indicator
+     --cstepper-h-spacing         — horizontal step-to-step distance (compact)
+     --cstepper-step-N-y          — vertical Y position of step N (expanded)
+     --cstepper-expanded-height   — total animated content height (expanded)
+
+   It also measures the rendered width of each .cstepper__label-short and
+   toggles the .is-zickzack / .is-no-zickzack class on the root based on
+   whether neighbouring labels would horizontally collide. This means the
+   two-row label layout activates from actual measurements rather than a
+   step-count heuristic.
+
+   STATE FLOW (toggle from compact → expanded)
+   --------------------------------------------
+     t=0     add  .is-labels-hidden     (labels fade out, --dur-fade)
+     t=200   add  .is-stacking
+             set  data-state="expanded" (content height starts growing)
+                                        (steps 2..N glide onto Step 1)
+     t=640   remove .is-stacking
+             add    .is-vertical        (steps 2..N fall down to step-N-y)
+     t=1080  remove .is-labels-hidden   (long labels + secondary fade in)
+     t=1300  done                       (busy flag released)
+
+   Reverse on compact ← expanded.
+
+   THEMING
+   -------
+   All visual parameters are exposed as CSS custom properties on the
+   `.cstepper` selector. Override them in your own stylesheet or via the
+   `style` attribute. Tokens are grouped under comment headers below.
+
+   ACCESSIBILITY
+   -------------
+   - The header contains a real <button> with aria-expanded that drives
+     screen-reader announcements regardless of the trigger area.
+   - Reduced motion: state changes happen instantly when the user prefers
+     reduced motion (see @media block at the bottom).
+   - Tap highlight on mobile is suppressed to avoid a flash on the whole card.
+
+   ============================================================================= */
+
+.cstepper {
+
+  /* === DESIGN TOKENS — override these to theme the component ============== */
+
+  /* ---------- Container ---------- */
+  --cstepper-bg: rgba(255, 255, 255, 0.6);
+  --cstepper-border-color: #F2F0EC;
+  --cstepper-border-width: 2px;
+  --cstepper-radius: 16px;
+  --cstepper-pad-x: 20px;
+  --cstepper-pad-y: 16px;
+
+  /* ---------- Headline ---------- */
+  --cstepper-headline-font: 'Roboto Slab', 'Roboto', Georgia, serif;
+  --cstepper-headline-size: 16px;
+  --cstepper-headline-weight: 500;
+  --cstepper-headline-color: #1a1a1a;
+
+  /* ---------- Step labels (short + long) ---------- */
+  --cstepper-label-font: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+  --cstepper-label-size: 14px;
+  --cstepper-label-weight: 500;
+  --cstepper-label-color: #1a1a1a;
+
+  /* ---------- Secondary explanation text ---------- */
+  --cstepper-secondary-font: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+  --cstepper-secondary-size: 14px;
+  --cstepper-secondary-weight: 400;
+  --cstepper-secondary-color: #5f5f5f;
+  --cstepper-secondary-line-height: 1.45;
+
+  /* ---------- Indicator circles ---------- */
+  /* Default values are for 1–3 steps. Step-count-based defaults are below
+     in the [data-step-count] blocks. At runtime, JavaScript may further
+     shrink the circle if the container is narrower than the defaults
+     require — but it never exceeds the values defined here. */
+  --cstepper-circle-size: 44px;
+  --cstepper-circle-font-size: 16px;
+  --cstepper-circle-font-weight: 500;
+  --cstepper-circle-text-color: #ffffff;
+
+  /* Per-step gradients. Defaults follow the user's spec (steps 1–3) and
+     extrapolate (steps 4–6). Override any of these to retheme. */
+  --cstepper-step1-gradient: linear-gradient(180deg, #94d445 0%, #71ce3f 100%);
+  --cstepper-step2-gradient: linear-gradient(180deg, #71ce3f 0%, #60cc75 100%);
+  --cstepper-step3-gradient: linear-gradient(180deg, #60cc75 0%, #3bc175 100%);
+  --cstepper-step4-gradient: linear-gradient(180deg, #3bc175 0%, #2dbb83 100%);
+  --cstepper-step5-gradient: linear-gradient(180deg, #2dbb83 0%, #1fb594 100%);
+  --cstepper-step6-gradient: linear-gradient(180deg, #1fb594 0%, #14ad9c 100%);
+
+  /* === LAYOUT TOKENS ====================================================== */
+
+  /* Step 1 anchor: this position is LOCKED. Step 1 is rendered here in every
+     state. If you change these values, do it once — never animate them. */
+  --cstepper-anchor-x: 12px;
+  --cstepper-anchor-y: 0px;
+
+  /* Step count, default to 3. Override via the data-step-count attribute
+     (preferred — see the [data-step-count] rules below for matching
+     circle-size and compact-height adjustments). */
+  --cstepper-step-count: 3;
+
+  /* Minimum horizontal gap between two adjacent indicator circles in
+     compact mode. Read by the JS controller when computing circle size;
+     if the container is too narrow to honour this gap at the target circle
+     size, JS shrinks the circles instead of letting them overlap. */
+  --cstepper-h-min-gap: 8px;
+
+  /* Minimum horizontal gap between two adjacent SHORT labels in compact
+     mode. Read by the JS controller during the zickzack decision: if the
+     measured label widths plus this gap don't fit between step centers,
+     zickzack layout is activated. */
+  --cstepper-label-min-gap: 4px;
+
+  /* Horizontal spacing in compact state. CSS fallback formula that
+     adapts to step count and container width when JavaScript is disabled
+     or hasn't run yet. At runtime, JS overrides this with an explicit
+     pixel value computed from the actual container width. */
+  --cstepper-h-spacing: calc(
+    (100% - 2 * var(--cstepper-anchor-x) - var(--cstepper-circle-size))
+    / max(var(--cstepper-step-count) - 1, 1)
+  );
+
+  /* Gap between the indicator and the long label/secondary text in
+     expanded mode. */
+  --cstepper-label-gap: 16px;
+
+  /* Vertical row offset for the "zickzack" label layout.
+     Even-numbered steps drop down by this amount in compact mode. */
+  --cstepper-label-row-offset: 22px;
+
+  /* Minimum vertical distance between two step indicators in expanded
+     mode. The JS controller uses Math.max(minSpread, prevDetailHeight + gap)
+     so this is a floor, not a fixed value. */
+  --cstepper-spread-v-min: 88px;
+
+  /* Default Y positions in expanded mode. JS overrides these at runtime
+     based on actual detail heights. Defaults are sensible fallbacks if
+     JS doesn't load. */
+  --cstepper-step-1-y: 0px;
+  --cstepper-step-2-y: 110px;
+  --cstepper-step-3-y: 220px;
+  --cstepper-step-4-y: 330px;
+  --cstepper-step-5-y: 440px;
+  --cstepper-step-6-y: 550px;
+
+  /* Animated content height. JS overrides --cstepper-expanded-height to
+     match the actual stack height after measuring details. */
+  --cstepper-compact-height: 80px;
+  --cstepper-expanded-height: 350px;
+
+  /* === MOTION TOKENS ====================================================== */
+
+  /* Keep these in sync with the TIMING constants in collapsible-stepper.js.
+     If you change one, change the other. */
+  --cstepper-dur-fade: 200ms;       /* label fade-in / fade-out */
+  --cstepper-dur-move: 440ms;       /* step icon position transition */
+  --cstepper-dur-height: 600ms;     /* container height transition */
+  --cstepper-dur-chevron: 300ms;    /* chevron rotation */
+  --cstepper-ease: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* === CONTAINER ========================================================== */
+
+  /* Width strategy: full-width up to a maximum that fits older mobile
+     screens (~280px viewport). Larger viewports cap at 340px so the
+     horizontal indicator row stays readable. */
+  width: 100%;
+  max-width: 340px;
+  background: var(--cstepper-bg);
+  border: var(--cstepper-border-width) solid var(--cstepper-border-color);
+  border-radius: var(--cstepper-radius);
+  padding: var(--cstepper-pad-y) var(--cstepper-pad-x);
+  box-sizing: border-box;
+  font-family: var(--cstepper-label-font);
+}
+
+/* =============================================================================
+   STEP-COUNT DEFAULTS — no-JS fallback
+   -----------------------------------------------------------------------------
+   These rules cover three things at once for users without JavaScript:
+
+     1. Sensible circle size + number font for 4–6 steps.
+     2. Larger compact-height (100px) to make room for two rows of labels.
+     3. Zickzack label positioning (even-numbered steps in lower row).
+
+   When JavaScript is active, it overrides all three through the
+   .is-zickzack and .is-no-zickzack classes (see below). The CSS [data-step-count]
+   rules merely provide a reasonable visual default before JS measures.
+
+   The label `top` rule uses long selector chains instead of nth-child because
+   .cstepper__step-icon elements share a parent with .cstepper__detail siblings,
+   making positional pseudo-classes fragile.
+   ============================================================================= */
+
+.cstepper[data-step-count="4"] {
+  --cstepper-circle-size: 40px;
+  --cstepper-circle-font-size: 15px;
+  --cstepper-compact-height: 100px;
+}
+.cstepper[data-step-count="5"] {
+  --cstepper-circle-size: 36px;
+  --cstepper-circle-font-size: 14px;
+  --cstepper-compact-height: 100px;
+}
+.cstepper[data-step-count="6"] {
+  --cstepper-circle-size: 32px;
+  --cstepper-circle-font-size: 13px;
+  --cstepper-compact-height: 100px;
+}
+
+.cstepper[data-step-count="4"] .cstepper__step-icon[data-step="2"] .cstepper__label-short,
+.cstepper[data-step-count="4"] .cstepper__step-icon[data-step="4"] .cstepper__label-short,
+.cstepper[data-step-count="5"] .cstepper__step-icon[data-step="2"] .cstepper__label-short,
+.cstepper[data-step-count="5"] .cstepper__step-icon[data-step="4"] .cstepper__label-short,
+.cstepper[data-step-count="6"] .cstepper__step-icon[data-step="2"] .cstepper__label-short,
+.cstepper[data-step-count="6"] .cstepper__step-icon[data-step="4"] .cstepper__label-short,
+.cstepper[data-step-count="6"] .cstepper__step-icon[data-step="6"] .cstepper__label-short {
+  top: calc(var(--cstepper-circle-size) + 8px + var(--cstepper-label-row-offset));
+}
+
+/* =============================================================================
+   ZICKZACK STATE — JS-controlled, overrides the [data-step-count] defaults
+   -----------------------------------------------------------------------------
+   The controller measures actual rendered label widths and computes step
+   centers from anchor-x + (k-1)·h-spacing + circle/2. If any two adjacent
+   labels would horizontally collide (with --cstepper-label-min-gap as
+   padding), it adds .is-zickzack to the root. Otherwise it adds .is-no-zickzack.
+
+   Why two classes? CSS specificity. The [data-step-count] rules above
+   automatically apply zickzack for 4–6 steps as a no-JS fallback. To turn
+   that OFF (e.g. 6 steps with single-char labels), we need a class with
+   equal-or-higher specificity that comes later in the cascade. That's
+   .is-no-zickzack. To turn zickzack ON for low step counts where labels
+   are very long (e.g. 3 steps with "Initialization"), we need .is-zickzack.
+
+   Specificity of both rule sets is the same; cascade order ensures these
+   blocks win because they appear AFTER the [data-step-count] rules.
+   ============================================================================= */
+
+/* --- ZICKZACK OFF (labels fit on a single row) --- */
+.cstepper.is-no-zickzack {
+  --cstepper-compact-height: 80px;
+}
+.cstepper.is-no-zickzack .cstepper__step-icon[data-step="2"] .cstepper__label-short,
+.cstepper.is-no-zickzack .cstepper__step-icon[data-step="4"] .cstepper__label-short,
+.cstepper.is-no-zickzack .cstepper__step-icon[data-step="6"] .cstepper__label-short {
+  top: calc(var(--cstepper-circle-size) + 8px);
+}
+
+/* --- ZICKZACK ON (labels need two rows) --- */
+.cstepper.is-zickzack {
+  --cstepper-compact-height: 100px;
+}
+.cstepper.is-zickzack .cstepper__step-icon[data-step="2"] .cstepper__label-short,
+.cstepper.is-zickzack .cstepper__step-icon[data-step="4"] .cstepper__label-short,
+.cstepper.is-zickzack .cstepper__step-icon[data-step="6"] .cstepper__label-short {
+  top: calc(var(--cstepper-circle-size) + 8px + var(--cstepper-label-row-offset));
+}
+
+/* =============================================================================
+   TRIGGER AREA
+   -----------------------------------------------------------------------------
+   data-trigger="container" (default): the whole pattern is clickable.
+   data-trigger="header":              only the header (button) is clickable.
+
+   The JS sets this attribute based on the triggerArea option. The CSS only
+   needs to adjust the cursor + tap-highlight behaviour to match.
+   ============================================================================= */
+
+.cstepper[data-trigger="container"] {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.cstepper[data-trigger="header"] {
+  cursor: default;
+}
+.cstepper[data-trigger="header"] .cstepper__toggle {
+  cursor: pointer;
+}
+
+/* =============================================================================
+   HEADER
+   ----------------------------------------------------------------------------- */
+
+.cstepper__toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  margin: 0;
+  padding: 4px 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.cstepper__toggle:focus-visible {
+  outline: 2px solid #6c9ff5;
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.cstepper__headline {
+  font-family: var(--cstepper-headline-font);
+  font-size: var(--cstepper-headline-size);
+  font-weight: var(--cstepper-headline-weight);
+  color: var(--cstepper-headline-color);
+  letter-spacing: 0.01em;
+}
+
+.cstepper__chevron {
+  width: 20px;
+  height: 20px;
+  color: var(--cstepper-headline-color);
+  flex-shrink: 0;
+  transition: transform var(--cstepper-dur-chevron) var(--cstepper-ease);
+}
+.cstepper[data-state="expanded"] .cstepper__chevron {
+  transform: rotate(180deg);
+}
+
+/* =============================================================================
+   CONTENT AREA — animated height
+   ----------------------------------------------------------------------------- */
+
+.cstepper__content {
+  position: relative;
+  margin-top: 16px;
+  height: var(--cstepper-compact-height);
+  transition: height var(--cstepper-dur-height) var(--cstepper-ease);
+}
+.cstepper[data-state="expanded"] .cstepper__content {
+  height: var(--cstepper-expanded-height);
+}
+
+/* =============================================================================
+   STEP ICONS (circle + short label container)
+   -----------------------------------------------------------------------------
+   Each .cstepper__step-icon is a positioned wrapper with a fixed width
+   (= circle size). The circle sits at its top-left; the short label is
+   centered below.
+   ============================================================================= */
+
+.cstepper__step-icon {
+  position: absolute;
+  width: var(--cstepper-circle-size);
+  top: var(--cstepper-anchor-y);
+  transition:
+    left  var(--cstepper-dur-move) var(--cstepper-ease),
+    top   var(--cstepper-dur-move) var(--cstepper-ease),
+    width var(--cstepper-dur-move) var(--cstepper-ease);
+}
+
+/* Compact horizontal positions: Step k sits at anchorX + (k-1)·spacing.
+   Z-index decreases by step number so Step 1 stacks on top during the
+   collapse phase. */
+.cstepper__step-icon[data-step="1"] { left: var(--cstepper-anchor-x); z-index: 60; }
+.cstepper__step-icon[data-step="2"] { left: calc(var(--cstepper-anchor-x) + 1 * var(--cstepper-h-spacing)); z-index: 50; }
+.cstepper__step-icon[data-step="3"] { left: calc(var(--cstepper-anchor-x) + 2 * var(--cstepper-h-spacing)); z-index: 40; }
+.cstepper__step-icon[data-step="4"] { left: calc(var(--cstepper-anchor-x) + 3 * var(--cstepper-h-spacing)); z-index: 30; }
+.cstepper__step-icon[data-step="5"] { left: calc(var(--cstepper-anchor-x) + 4 * var(--cstepper-h-spacing)); z-index: 20; }
+.cstepper__step-icon[data-step="6"] { left: calc(var(--cstepper-anchor-x) + 5 * var(--cstepper-h-spacing)); z-index: 10; }
+
+/* Stacking state: all non-Step-1 indicators glide onto the anchor point.
+   They visually disappear behind Step 1 (z-index handles the layering). */
+.cstepper.is-stacking .cstepper__step-icon[data-step="2"],
+.cstepper.is-stacking .cstepper__step-icon[data-step="3"],
+.cstepper.is-stacking .cstepper__step-icon[data-step="4"],
+.cstepper.is-stacking .cstepper__step-icon[data-step="5"],
+.cstepper.is-stacking .cstepper__step-icon[data-step="6"] {
+  left: var(--cstepper-anchor-x);
+  top: var(--cstepper-anchor-y);
+}
+
+/* Vertical state: Step 1 stays put, Steps 2..N drop to their respective
+   --cstepper-step-N-y positions. These are typically set by the JS
+   controller based on actual detail content heights. */
+.cstepper.is-vertical .cstepper__step-icon[data-step="1"] { left: var(--cstepper-anchor-x); top: var(--cstepper-step-1-y); }
+.cstepper.is-vertical .cstepper__step-icon[data-step="2"] { left: var(--cstepper-anchor-x); top: var(--cstepper-step-2-y); }
+.cstepper.is-vertical .cstepper__step-icon[data-step="3"] { left: var(--cstepper-anchor-x); top: var(--cstepper-step-3-y); }
+.cstepper.is-vertical .cstepper__step-icon[data-step="4"] { left: var(--cstepper-anchor-x); top: var(--cstepper-step-4-y); }
+.cstepper.is-vertical .cstepper__step-icon[data-step="5"] { left: var(--cstepper-anchor-x); top: var(--cstepper-step-5-y); }
+.cstepper.is-vertical .cstepper__step-icon[data-step="6"] { left: var(--cstepper-anchor-x); top: var(--cstepper-step-6-y); }
+
+/* =============================================================================
+   CIRCLE INDICATORS
+   -----------------------------------------------------------------------------
+   width / height / font-size carry transitions so live resizing (e.g. when
+   the container width shrinks and the unified layout function recomputes
+   the circle size) animates smoothly instead of snapping.
+   ============================================================================= */
+
+.cstepper__circle {
+  width: var(--cstepper-circle-size);
+  height: var(--cstepper-circle-size);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--cstepper-circle-text-color);
+  font-size: var(--cstepper-circle-font-size);
+  font-weight: var(--cstepper-circle-font-weight);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  user-select: none;
+  transition:
+    width     var(--cstepper-dur-move) var(--cstepper-ease),
+    height    var(--cstepper-dur-move) var(--cstepper-ease),
+    font-size var(--cstepper-dur-move) var(--cstepper-ease);
+}
+.cstepper__step-icon[data-step="1"] .cstepper__circle { background: var(--cstepper-step1-gradient); }
+.cstepper__step-icon[data-step="2"] .cstepper__circle { background: var(--cstepper-step2-gradient); }
+.cstepper__step-icon[data-step="3"] .cstepper__circle { background: var(--cstepper-step3-gradient); }
+.cstepper__step-icon[data-step="4"] .cstepper__circle { background: var(--cstepper-step4-gradient); }
+.cstepper__step-icon[data-step="5"] .cstepper__circle { background: var(--cstepper-step5-gradient); }
+.cstepper__step-icon[data-step="6"] .cstepper__circle { background: var(--cstepper-step6-gradient); }
+
+/* =============================================================================
+   SHORT LABEL (compact state)
+   -----------------------------------------------------------------------------
+   Centered horizontally on the indicator. Sits one row below the circle by
+   default; in zickzack mode (see classes above), even-numbered steps drop
+   to a second row.
+
+   The `top` transition keeps the label moving smoothly when zickzack state
+   toggles at runtime (e.g. the user resizes the container until labels
+   would collide, and zickzack kicks in).
+   ============================================================================= */
+
+.cstepper__label-short {
+  position: absolute;
+  top: calc(var(--cstepper-circle-size) + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--cstepper-label-font);
+  font-size: var(--cstepper-label-size);
+  font-weight: var(--cstepper-label-weight);
+  color: var(--cstepper-label-color);
+  white-space: nowrap;
+  pointer-events: none;
+  transition:
+    opacity var(--cstepper-dur-fade) ease,
+    top     var(--cstepper-dur-move) var(--cstepper-ease);
+}
+
+/* =============================================================================
+   DETAIL BLOCK (expanded state)
+   -----------------------------------------------------------------------------
+   Long label + secondary text, positioned to the right of the indicator.
+   The long label has line-height equal to circle-size so it aligns
+   vertically with the circle's center.
+   ============================================================================= */
+
+.cstepper__detail {
+  position: absolute;
+  left: calc(var(--cstepper-anchor-x) + var(--cstepper-circle-size) + var(--cstepper-label-gap));
+  right: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--cstepper-dur-fade) ease;
+}
+.cstepper__detail[data-step="1"] { top: var(--cstepper-step-1-y); }
+.cstepper__detail[data-step="2"] { top: var(--cstepper-step-2-y); }
+.cstepper__detail[data-step="3"] { top: var(--cstepper-step-3-y); }
+.cstepper__detail[data-step="4"] { top: var(--cstepper-step-4-y); }
+.cstepper__detail[data-step="5"] { top: var(--cstepper-step-5-y); }
+.cstepper__detail[data-step="6"] { top: var(--cstepper-step-6-y); }
+
+.cstepper__label-long {
+  font-family: var(--cstepper-label-font);
+  font-size: var(--cstepper-label-size);
+  font-weight: var(--cstepper-label-weight);
+  color: var(--cstepper-label-color);
+  /* match the circle height so the label aligns with the circle center */
+  line-height: var(--cstepper-circle-size);
+  height: var(--cstepper-circle-size);
+  margin: 0;
+}
+
+.cstepper__secondary {
+  font-family: var(--cstepper-secondary-font);
+  font-size: var(--cstepper-secondary-size);
+  font-weight: var(--cstepper-secondary-weight);
+  color: var(--cstepper-secondary-color);
+  line-height: var(--cstepper-secondary-line-height);
+  margin: 2px 0 0 0;
+}
+
+/* =============================================================================
+   CHOREOGRAPHY HELPERS
+   ----------------------------------------------------------------------------- */
+
+/* During mid-animation phases, all labels are hidden. The JS adds this
+   class first, waits for fade, then changes layout, then removes it. */
+.cstepper.is-labels-hidden .cstepper__label-short,
+.cstepper.is-labels-hidden .cstepper__detail {
+  opacity: 0 !important;
+}
+
+/* In vertical (expanded) mode the short labels stay hidden and the
+   detail blocks become visible. */
+.cstepper.is-vertical .cstepper__label-short {
+  opacity: 0;
+}
+.cstepper.is-vertical .cstepper__detail {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* =============================================================================
+   REDUCED MOTION
+   -----------------------------------------------------------------------------
+   Users with prefers-reduced-motion get an instant state change.
+   ============================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .cstepper *,
+  .cstepper__content,
+  .cstepper__chevron {
+    transition-duration: 0.01ms !important;
+  }
+}

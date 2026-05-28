@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Collapsible Stepper · Demo</title>
+
+  <!-- Web fonts: Roboto + Roboto Slab -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@500&family=Roboto:wght@400;500&display=swap">
+
+  <!-- Component stylesheet -->
+  <link rel="stylesheet" href="stepper.css">
+
+  <style>
+    /* ----- Demo page only; not part of the component ----- */
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #F6F4EE;
+      min-height: 100vh;
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #1a1a1a;
+    }
+    .demo-stage {
+      min-height: 100vh;
+      padding: 40px 20px 80px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 32px;
+      box-sizing: border-box;
+    }
+    .demo-section {
+      width: 100%;
+      max-width: 340px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+    .demo-caption {
+      font-size: 12px;
+      color: #888;
+      text-align: center;
+      line-height: 1.5;
+      margin: 0;
+    }
+  </style>
+</head>
+<body>
+
+  <main class="demo-stage">
+
+    <!-- ============================================================
+         Example 1 — Classic 3-step "How it works"
+         Demonstrates the original use case: 3 indicators, short text,
+         entire container clickable (default trigger).
+         ============================================================ -->
+    <section class="demo-section">
+      <p class="demo-caption">3 steps · trigger: container (default)</p>
+
+      <div class="cstepper"
+           data-stepper
+           data-state="compact"
+           data-step-count="3">
+
+        <button type="button"
+                class="cstepper__toggle"
+                aria-expanded="false"
+                aria-controls="hiw-content">
+          <span class="cstepper__headline">How it works</span>
+          <svg class="cstepper__chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M6 9l6 6 6-6"
+                  stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+
+        <div class="cstepper__content" id="hiw-content">
+          <!-- Step icons (circle + short label) -->
+          <div class="cstepper__step-icon" data-step="1">
+            <div class="cstepper__circle" aria-hidden="true">1</div>
+            <div class="cstepper__label-short">Prepare</div>
+          </div>
+          <div class="cstepper__step-icon" data-step="2">
+            <div class="cstepper__circle" aria-hidden="true">2</div>
+            <div class="cstepper__label-short">Review</div>
+          </div>
+          <div class="cstepper__step-icon" data-step="3">
+            <div class="cstepper__circle" aria-hidden="true">3</div>
+            <div class="cstepper__label-short">Complete</div>
+          </div>
+
+          <!-- Detail blocks (long label + secondary text) -->
+          <div class="cstepper__detail" data-step="1">
+            <p class="cstepper__label-long">Prepare</p>
+            <p class="cstepper__secondary">Collect the required information, set up the account or workflow, and make sure prerequisites are complete.</p>
+          </div>
+          <div class="cstepper__detail" data-step="2">
+            <p class="cstepper__label-long">Review</p>
+            <p class="cstepper__secondary">Check the entered details, confirm everything is correct, and fix any missing or invalid information.</p>
+          </div>
+          <div class="cstepper__detail" data-step="3">
+            <p class="cstepper__label-long">Complete</p>
+            <p class="cstepper__secondary">Finalize the process, submit the last step, and receive confirmation or the finished result.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- ============================================================
+         Example 2 — 5-step with varied text lengths.
+         Demonstrates: scaled indicator size, zickzack labels (steps
+         2 and 4 in the lower row), and dynamic height — Step 2's long
+         text pushes Step 3 further down.
+         ============================================================ -->
+    <section class="demo-section">
+      <p class="demo-caption">5 steps · varied text lengths · zickzack labels</p>
+
+      <div class="cstepper"
+           data-stepper
+           data-state="compact"
+           data-step-count="5">
+
+        <button type="button"
+                class="cstepper__toggle"
+                aria-expanded="false"
+                aria-controls="onb-content">
+          <span class="cstepper__headline">Onboarding flow</span>
+          <svg class="cstepper__chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M6 9l6 6 6-6"
+                  stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+
+        <div class="cstepper__content" id="onb-content">
+          <div class="cstepper__step-icon" data-step="1">
+            <div class="cstepper__circle" aria-hidden="true">1</div>
+            <div class="cstepper__label-short">Sign up</div>
+          </div>
+          <div class="cstepper__step-icon" data-step="2">
+            <div class="cstepper__circle" aria-hidden="true">2</div>
+            <div class="cstepper__label-short">Configure</div>
+          </div>
+          <div class="cstepper__step-icon" data-step="3">
+            <div class="cstepper__circle" aria-hidden="true">3</div>
+            <div class="cstepper__label-short">Import</div>
+          </div>
+          <div class="cstepper__step-icon" data-step="4">
+            <div class="cstepper__circle" aria-hidden="true">4</div>
+            <div class="cstepper__label-short">Build</div>
+          </div>
+          <div class="cstepper__step-icon" data-step="5">
+            <div class="cstepper__circle" aria-hidden="true">5</div>
+            <div class="cstepper__label-short">Ship</div>
+          </div>
+
+          <div class="cstepper__detail" data-step="1">
+            <p class="cstepper__label-long">Sign up</p>
+            <p class="cstepper__secondary">Create your free account in under a minute.</p>
+          </div>
+          <div class="cstepper__detail" data-step="2">
+            <p class="cstepper__label-long">Configure</p>
+            <p class="cstepper__secondary">Set up your workspace, invite team members, configure permissions, and define your project structure. This step covers all the foundational setup before producing real work.</p>
+          </div>
+          <div class="cstepper__detail" data-step="3">
+            <p class="cstepper__label-long">Import</p>
+            <p class="cstepper__secondary">Upload existing data or connect external sources.</p>
+          </div>
+          <div class="cstepper__detail" data-step="4">
+            <p class="cstepper__label-long">Build</p>
+            <p class="cstepper__secondary">Create your first project and customize it to your specific needs and workflow.</p>
+          </div>
+          <div class="cstepper__detail" data-step="5">
+            <p class="cstepper__label-long">Ship</p>
+            <p class="cstepper__secondary">Deploy when ready.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- ============================================================
+         Example 3 — 6-step with trigger="header" mode.
+         Demonstrates: maximum step count and restricted click area
+         (only the header bar toggles; clicks on the body do nothing).
+         ============================================================ -->
+    <section class="demo-section">
+      <p class="demo-caption">6 steps · trigger: header only</p>
+
+      <div class="cstepper"
+           data-stepper
+           data-state="compact"
+           data-step-count="6"
+           data-trigger="header">
+
+        <button type="button"
+                class="cstepper__toggle"
+                aria-expanded="false"
+                aria-controls="full-content">
+          <span class="cstepper__headline">Full pipeline</span>
+          <svg class="cstepper__chevron" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M6 9l6 6 6-6"
+                  stroke="currentColor" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+
+        <div class="cstepper__content" id="full-content">
+          <div class="cstepper__step-icon" data-step="1"><div class="cstepper__circle">1</div><div class="cstepper__label-short">Plan</div></div>
+          <div class="cstepper__step-icon" data-step="2"><div class="cstepper__circle">2</div><div class="cstepper__label-short">Design</div></div>
+          <div class="cstepper__step-icon" data-step="3"><div class="cstepper__circle">3</div><div class="cstepper__label-short">Build</div></div>
+          <div class="cstepper__step-icon" data-step="4"><div class="cstepper__circle">4</div><div class="cstepper__label-short">Test</div></div>
+          <div class="cstepper__step-icon" data-step="5"><div class="cstepper__circle">5</div><div class="cstepper__label-short">Launch</div></div>
+          <div class="cstepper__step-icon" data-step="6"><div class="cstepper__circle">6</div><div class="cstepper__label-short">Iterate</div></div>
+
+          <div class="cstepper__detail" data-step="1"><p class="cstepper__label-long">Plan</p><p class="cstepper__secondary">Define scope, audience, and success metrics.</p></div>
+          <div class="cstepper__detail" data-step="2"><p class="cstepper__label-long">Design</p><p class="cstepper__secondary">Wireframes, prototypes, and stakeholder review.</p></div>
+          <div class="cstepper__detail" data-step="3"><p class="cstepper__label-long">Build</p><p class="cstepper__secondary">Implementation, code review, and integration.</p></div>
+          <div class="cstepper__detail" data-step="4"><p class="cstepper__label-long">Test</p><p class="cstepper__secondary">QA, accessibility checks, and performance audits.</p></div>
+          <div class="cstepper__detail" data-step="5"><p class="cstepper__label-long">Launch</p><p class="cstepper__secondary">Production rollout and monitoring.</p></div>
+          <div class="cstepper__detail" data-step="6"><p class="cstepper__label-long">Iterate</p><p class="cstepper__secondary">Collect feedback and refine.</p></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Component controller — auto-initializes all [data-stepper] elements -->
+  <script src="stepper.js"></script>
+</body>
+</html>
