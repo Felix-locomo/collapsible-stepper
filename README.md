@@ -339,3 +339,11 @@ State-driven classes that the JS toggles at runtime:
 ## License
 
 MIT.
+
+---
+
+## CDN Usage
+
+https://cdn.jsdelivr.net/gh/Felix-locomo/collapsible-stepper@v1.0.0/stepper.css
+https://cdn.jsdelivr.net/gh/Felix-locomo/collapsible-stepper@v1.0.0/stepper.js
+
